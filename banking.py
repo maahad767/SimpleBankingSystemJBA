@@ -1,12 +1,11 @@
-import string
+import sqlite3
 import random
+import string
 
 
-# global variables
-CARDS = []
-user = {
-    'info': {},
-}
+user = None
+conn = sqlite3.connect('card.s3db')
+cur = conn.cursor()
 
 
 def menu():
@@ -18,10 +17,24 @@ def menu():
 
 def generate_card():
     IIN = '400000'
-    account_number = "".join(random.choice(string.digits) for _ in range(9))
-    checksum = '9'
-    card_number = IIN + account_number + checksum
+    account_number = "".join(str(random.randint(0, 9)) for _ in range(9))
+    card_number = IIN + account_number
+
+    card_number += str(checksum(card_number))
     return card_number
+
+
+def checksum(card_number):
+    total = 0
+    for i, digit in enumerate(card_number):
+        digit = int(digit)
+        if i % 2 == 0:
+            digit *= 2
+            total += digit if digit <= 9 else digit - 9
+        else:
+            total += digit
+
+    return 10 - total % 10 if total % 10 != 0 else 0
 
 
 def create_account():
@@ -36,21 +49,21 @@ def create_account():
     print('Your card PIN:')
     pin = "".join(random.choice(string.digits) for _ in range(4))
     print(pin)
-    card_info = {
-        'card_number': card_number,
-        'pin': pin,
-        'balance': 0,
-    }
-    CARDS.append(card_info)
+
+    # Insert card info to DB
+    cur.execute('INSERT INTO card (number, pin) VALUES (?, ?);', (card_number, pin))
+    conn.commit()
 
 
 def login(card_info):
-    user['info'] = card_info
+    global user
+    user = card_info
     print('\nYou have successfully logged in!')
     dashboard()
 
 
 def verification():
+    global conn, cur
     print()
     print('Enter your card number:')
     card_number = input()
@@ -58,12 +71,17 @@ def verification():
     pin = input()
 
     # logging in the user by verifying info
-    for card_info in CARDS:
-        if card_info['card_number'] == card_number and card_info['pin'] == pin:
-            login(card_info)
-            return
+    cur.execute('SELECT * FROM card WHERE number = ? and pin = ?;', (card_number, pin))
 
-    if not user['info']:
+    data = cur.fetchone()
+
+    if data:
+        card_info = {
+            'id': data[0],
+            'balance': data[3],
+        }
+        login(card_info)
+    else:
         print('\nWrong card number or PIN!')
 
 
@@ -81,22 +99,46 @@ def dashboard():
             logout()
             return
         elif command == 0:
-            print('Bye!')
-            exit(0)
+            bye()
 
 
 def balance():
     print()
-    print('Balance:', user['info']['balance'])
+    global user
+    print('Balance:', user.get('balance'))
 
 
 def logout():
-    user['info'] = {}
+    global user
+    user = None
     print()
     print('You have successfully logged out!')
 
 
+def create_table():
+    global conn, cur
+    cur.execute('CREATE TABLE IF NOT EXISTS card ('
+                'id INTEGER PRIMARY KEY AUTOINCREMENT,'
+                'number TEXT,'
+                'pin TEXT,'
+                'balance INTEGER DEFAULT 0'
+                ');')
+    conn.commit()
+
+
+def cc_close():
+    cur.close()
+    conn.close()
+
+
+def bye():
+    print('Bye!')
+    cc_close()
+    exit(0)
+
+
 def main():
+    create_table()
     while True:
         menu()
         command = int(input())
@@ -105,8 +147,7 @@ def main():
         elif command == 2:
             verification()
         elif command == 0:
-            print('Bye!')
-            exit(0)
+            bye()
 
 
 if __name__ == '__main__':
