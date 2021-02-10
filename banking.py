@@ -3,7 +3,10 @@ import random
 import string
 
 
-user = None
+user = {
+    'id': None,
+    'balance': 0,
+}
 conn = sqlite3.connect('card.s3db')
 cur = conn.cursor()
 
@@ -89,13 +92,23 @@ def dashboard():
     while True:
         print()
         print('1. Balance')
-        print('2. Log out')
+        print('2. Add income')
+        print('3. Do transfer')
+        print('4. Close account')
+        print('5. Log out')
         print('0. Exit')
         command = int(input())
 
         if command == 1:
             balance()
         elif command == 2:
+            add_balance()
+        elif command == 3:
+            transfer_balance()
+        elif command == 4:
+            close_account()
+            return
+        elif command == 5:
             logout()
             return
         elif command == 0:
@@ -108,11 +121,76 @@ def balance():
     print('Balance:', user.get('balance'))
 
 
+def add_balance():
+    print()
+    global user, conn, cur
+    print('Enter income:')
+    amount = int(input())
+    user['balance'] += amount
+    cur.execute('UPDATE card SET balance=? WHERE id=?', (user['balance'], user.get('id')))
+    print('Income was added!')
+    conn.commit()
+
+
+def transfer_balance():
+    global user
+    print('\nTransfer')
+    current = user.get('balance')
+    print('Enter card number:')
+    to = input()
+    # check if the card valid and exists
+    cs = str(checksum(to[:15]))
+    if cs != to[15]:
+        print('Probably you made a mistake in the card number. Please try again!')
+        return
+    cur.execute('SELECT id FROM card WHERE number=?', (to,))
+    destination_id = cur.fetchone()
+    if not destination_id:
+        print('Such a card does not exist.')
+        return
+    print('Enter how much money you want to transfer:')
+    amount = int(input())
+    if amount <= current:
+        update_balance(amount)
+        update_balance(amount, id=destination_id[0])
+        print('Success!')
+    else:
+        print('Not enough money!')
+
+
+def update_balance(amount : int, id=None):
+    global cur, conn, user
+    if id is not None:
+        cur.execute('SELECT balance FROM card WHERE id=?', (id,))
+        cur.execute('UPDATE card SET balance=balance+? WHERE id=?', (amount, id))
+    else:
+        user['balance'] -= amount
+        cur.execute('UPDATE card SET balance=? WHERE id=?', (user['balance'], user.get('id')))
+    conn.commit()
+
+
+def close_account():
+    global cur, conn, user
+    cur.execute('DELETE FROM card WHERE id=?', (user.get('id'),))
+    user = {
+        'id': None,
+        'balance': 0,
+    }
+    conn.commit()
+    print('The account has been closed!')
+
+
 def logout():
     global user
     user = None
     print()
     print('You have successfully logged out!')
+
+
+def bye():
+    print('Bye!')
+    cc_close()
+    exit(0)
 
 
 def create_table():
@@ -129,12 +207,6 @@ def create_table():
 def cc_close():
     cur.close()
     conn.close()
-
-
-def bye():
-    print('Bye!')
-    cc_close()
-    exit(0)
 
 
 def main():
